@@ -55,66 +55,49 @@ class GeneSequencing:
 
 		# Delete the elements that we don't need from the front rows in the table
 		itemsToDelete = D
-		lastTableRowIndex = len(table) - 1
 		for i in range(D + 1):
 			for j in range(itemsToDelete):
 				del table[i][0]
-				del table[lastTableRowIndex - i][0]
 			itemsToDelete -= 1
+
+		# Delete the elements that we don't need from the end rows in the table
+		boundaryIndex = self.MaxCharactersToAlign
+		if (len(self.seq2)) < boundaryIndex:
+			boundaryIndex = len(self.seq2)
+
+		colIndex = 0
+		chunkToChop = 0
+		for i in range(D + 1, len(table)):
+			if(colIndex + self.K) > boundaryIndex:
+				chunkToChop = (colIndex + self.K) - boundaryIndex
+			for j in range(chunkToChop):
+				del table[i][0]
+			colIndex += 1
 
 		self.table = table
 
-		# breakingPointColIndex= numCols - D
-		# breakingPointRowIndex = numRows - D
-		# table = [[None]]
-		# diagonalAnchor = 0
-		# done = False
-		#
-		# d = D
-		#
-		# while not done:
-		# 	# Add d values to your right
-		# 	for i in range(d):
-		# 		# Account for base cases while starting the table
-		# 		if (len(table) == 1):
-		# 			table[diagonalAnchor].append(i * INDEL_COST)
-		# 		else:
-		# 			table[diagonalAnchor].append((None))
-		# 	# Add D values below you
-		# 	if diagonalAnchor == 0:
-		# 		# We need to create the next D rows so we can add to them
-		# 		for i in range(d):
-		# 			table.append(i * INDEL_COST) # account for the base case
-		# 	elif diagonalAnchor > 0 and diagonalAnchor < (breakingPointRowIndex + 1):
-		# 		# The next D - 1 rows have already been added
-		# 		# Add just one row
-		# 		table.append([None])
-		# 	# else:
-		# 	# Your rows have already been added. So do nothing.
-		#
-		# 	indexOfLastRowInTable = len(table) - 1
-		# 	indexOfLastColInTable = len(table[indexOfLastRowInTable]) - 1
-		#
-		# 	if indexOfLastRowInTable >= breakingPointRowIndex and indexOfLastColInTable >= breakingPointColIndex:
-		# 		d -= 1
-		#
-		# self.table = table
-
 	def setBestCost(self, row, col):
+		# Add the shared base cases
+		if col == 0 and row == 0:
+			self.table[row][col] = ((0, None), (None, None))
+			return
+		elif row == 0:
+			self.table[row][col] = ((INDEL_COST * col, INDEL_OPERATION), (None, None))
+			return
+
 		if self.banded:
-			topCost, topPos = self.getTopValAndPos(self.table, row, col)
-			leftCost, leftPos = self.getLeftAndPos(self.table, row, col)
-			diagonalCost, diagPos = self.getDiagonalValAndPos(self.table, row, col)
-		else:
-			# Add the base case for the first row
-			if col == 0 and row == 0:
-				self.table[row][col] = ((0, None), (None, None))
-				return
-			elif col == 0:
+			# Add the unshared base case
+			if col == 0 and row <= D:
 				self.table[row][col] = ((INDEL_COST * row, INDEL_OPERATION), (None, None))
 				return
-			elif row == 0:
-				self.table[row][col] = ((INDEL_COST * col, INDEL_OPERATION), (None, None))
+			topCost, topPos = self.getTopValAndPos(row, col)
+			leftCost, leftPos = self.getLeftValAndPos(row, col)
+			diagonalCost, diagPos = self.getDiagonalValAndPos(row, col)
+
+		else:
+			# Add the unshared base case
+			if col == 0:
+				self.table[row][col] = ((INDEL_COST * row, INDEL_OPERATION), (None, None))
 				return
 
 			leftCost = self.table[row][col - 1][0][0]
@@ -129,7 +112,7 @@ class GeneSequencing:
 			cost = diagonalCost + MATCH_COST
 			operation = MATCH_OPERATION
 			if self.banded:
-				junk, parentLocation = self.getDiagonalValAndPos(self.table, row, col)
+				junk, parentLocation = self.getDiagonalValAndPos(row, col)
 			else:
 				parentLocation = (row - 1, col - 1)
 		else:
@@ -148,16 +131,13 @@ class GeneSequencing:
 			else:
 				print("ERROR. You should never get here.")
 		self.table[row][col] = ((cost, operation), parentLocation)
-		# return table
 
 	def areCharsEqual(self, row, col):
-		posInSeq1 = row - 2 # Nothing is tricky with the row index
-		isBanded = self.banded
-		if not isBanded or row <= D:
-			posInSeq2 = col - 2
-		else:
-			actualPos = row - D - 2
-			posInSeq2 = actualPos
+		posInSeq1 = row - 1 # Nothing is tricky with the row index
+		posInSeq2 = col - 1
+		if self.banded and row > D:
+			spacesToMyLeft = (row - D) + col
+			posInSeq2 = spacesToMyLeft - 1
 
 		# Compare string characters
 		if self.seq1[posInSeq1] == self.seq2[posInSeq2]:
@@ -168,13 +148,13 @@ class GeneSequencing:
 		isLastColumn = False
 		if (len(self.table[row]) - 1) == col:
 			isLastColumn = True
-		if len(row) <= self.K and row <= D and not isLastColumn:
+		if len(self.table[row]) <= self.K and row <= D and not isLastColumn:
 			top = self.table[row - 1][col][0][0]
 			pos = (row - 1, col)
-		elif len(row) == self.K and row > D and row <= (len(self.table) - (D + 1)) and not isLastColumn:
+		elif len(self.table[row]) == self.K and row > D and row <= (len(self.table) - (D + 1)) and not isLastColumn:
 			top = self.table[row - 1][col + 1][0][0]
 			pos = (row - 1, col + 1)
-		elif row > len(self.table) - (D + 1):
+		elif row > len(self.table) - (D + 1) and len(self.table[row]) != len(self.table[row - 1]):
 			top = self.table[row - 1][col + 1][0][0]
 			pos = (row - 1, col + 1)
 		else:
@@ -252,13 +232,13 @@ class GeneSequencing:
 		# Build the table before traversing it
 		if(banded):
 			self.buildBandedTable(numRows, numCols)
-			for rowIndex in range(len(self.table)):
-				for colIndex in range()
 		else:
 			self.buildUnrestrictedTable(numRows, numCols)
-			for rowIndex in range(len(self.table)):
-				for colIndex in range(len(self.table[rowIndex])):
-					self.setBestCost(rowIndex, colIndex)
+
+		# Perform table calculations
+		for rowIndex in range(len(self.table)):
+			for colIndex in range(len(self.table[rowIndex])):
+				self.setBestCost(rowIndex, colIndex)
 
 		# Table has been populated. Time for back traversal
 		row = len(self.table) - 1
