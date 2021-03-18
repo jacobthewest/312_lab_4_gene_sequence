@@ -53,14 +53,16 @@ class GeneSequencing:
 			numColsforInit = self.K
 		table = [[thing] * numColsforInit for g in range(numRows + 1)]
 
-		# Delete the elements that we don't need from the front rows in the table
+		unreachable = ((INFINITY, None), (None, None))
+		# Infinitize the cost of elements that we don't need from the front rows in the table
 		itemsToDelete = D
 		for i in range(D + 1):
 			for j in range(itemsToDelete):
-				del table[i][0]
+				lastIndex = len(table[i]) - 1
+				table[i][lastIndex - j] = unreachable
 			itemsToDelete -= 1
 
-		# Delete the elements that we don't need from the end rows in the table
+		# Infinitize the elements that we don't need from the end rows in the table
 		boundaryIndex = self.MaxCharactersToAlign
 		if (len(self.seq2)) < boundaryIndex:
 			boundaryIndex = len(self.seq2)
@@ -71,7 +73,7 @@ class GeneSequencing:
 			if(colIndex + self.K) > boundaryIndex:
 				chunkToChop = (colIndex + self.K) - boundaryIndex
 			for j in range(chunkToChop):
-				del table[i][0]
+				table[i][j] = unreachable
 			colIndex += 1
 
 		self.table = table
@@ -136,8 +138,8 @@ class GeneSequencing:
 		posInSeq1 = row - 1 # Nothing is tricky with the row index
 		posInSeq2 = col - 1
 		if self.banded and row > D:
-			spacesToMyLeft = (row - D) + col
-			posInSeq2 = spacesToMyLeft - 1
+			colPosInUnrestrictedTable = col + (row - D - self.infinityCount)
+			posInSeq2 = colPosInUnrestrictedTable - 1
 
 		# Compare string characters
 		if self.seq1[posInSeq1] == self.seq2[posInSeq2]:
@@ -145,21 +147,15 @@ class GeneSequencing:
 		return False
 
 	def getTopValAndPos(self, row, col):
-		isLastColumn = False
-		if (len(self.table[row]) - 1) == col:
-			isLastColumn = True
-		if len(self.table[row]) <= self.K and row <= D and not isLastColumn:
-			top = self.table[row - 1][col][0][0]
-			pos = (row - 1, col)
-		elif len(self.table[row]) == self.K and row > D and row <= (len(self.table) - (D + 1)) and not isLastColumn:
-			top = self.table[row - 1][col + 1][0][0]
-			pos = (row - 1, col + 1)
-		elif row > len(self.table) - (D + 1) and len(self.table[row]) != len(self.table[row - 1]):
-			top = self.table[row - 1][col + 1][0][0]
+		if row > D and self.infinityCount == 0:
+			if col + 1 > self.K - 1:
+				top = INFINITY
+			else:
+				top = self.table[row - 1][col + 1][0][0]
 			pos = (row - 1, col + 1)
 		else:
-			top = INFINITY
-			pos = (None, None)
+			top = self.table[row - 1][col][0][0]
+			pos = (row - 1, col)
 		return top, pos
 
 	def getLeftValAndPos(self, row, col):
@@ -171,11 +167,11 @@ class GeneSequencing:
 			return left, pos
 
 	def getDiagonalValAndPos(self, row, col):
-		if row <= D:
-			diagonal = self.table[row - 1][col - 1][0][0]
-			pos = (row - 1, col - 1)
-		else:
+		if row > D and self.infinityCount == 0:
 			diagonal = self.table[row - 1][col][0][0]
+			pos = (row - 1, col)
+		else:
+			diagonal = self.table[row - 1][col - 1][0][0]
 			pos = (row - 1, col)
 		return diagonal, pos
 
@@ -211,11 +207,6 @@ class GeneSequencing:
 			returnString = character + returnString
 		return row, col, returnString
 
-	def getNextColumnStartingPosition(self, row):
-		if row >= D:
-			return 0
-		return 1
-
 # This is the method called by the GUI.  _seq1_ and _seq2_ are two sequences to be aligned, _banded_ is a boolean that tells
 # you whether you should compute a banded alignment or full alignment, and _align_length_ tells you 
 # how many base pairs to use in computing the alignment
@@ -237,8 +228,12 @@ class GeneSequencing:
 
 		# Perform table calculations
 		for rowIndex in range(len(self.table)):
+			self.infinityCount = 0
 			for colIndex in range(len(self.table[rowIndex])):
-				self.setBestCost(rowIndex, colIndex)
+				if self.table[rowIndex][colIndex][0][0] != INFINITY:
+					self.setBestCost(rowIndex, colIndex)
+				else:
+					self.infinityCount += 1
 
 		# Table has been populated. Time for back traversal
 		row = len(self.table) - 1
